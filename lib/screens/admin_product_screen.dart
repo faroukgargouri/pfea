@@ -37,7 +37,7 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
     setState(() => isLoading = true);
     try {
       final response =
-          await http.get(Uri.parse('http://192.168.100.105:5274/api/product'));
+          await http.get(Uri.parse('http://192.168.1.18:5274/api/product'));
       if (response.statusCode == 200) {
         final List decoded = jsonDecode(response.body);
         products = decoded.map((json) => Product.fromJson(json)).toList();
@@ -58,7 +58,7 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
     );
 
     final response = await http.post(
-      Uri.parse('http://192.168.100.105:5274/api/product'),
+      Uri.parse('http://192.168.1.18:5274/api/product'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(product.toJson()),
     );
@@ -81,7 +81,7 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
 
   Future<void> _deleteProduct(int id) async {
     final response = await http.delete(
-        Uri.parse('http://192.168.100.105:5274/api/product/$id'));
+        Uri.parse('http://192.168.1.18:5274/api/product/$id'));
     if (response.statusCode == 200) {
       await _loadProducts();
     }

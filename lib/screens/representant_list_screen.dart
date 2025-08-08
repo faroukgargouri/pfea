@@ -82,7 +82,7 @@ class _RepresentantListScreenState extends State<RepresentantListScreen> {
   Future<void> fetchRepresentants() async {
     setState(() => isLoading = true);
     final response = await http.get(
-      Uri.parse('http://192.168.100.105:5274/api/representant/by-representant'),
+      Uri.parse('http://192.168.1.18:5274/api/representant/by-representant'),
     );
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
@@ -102,7 +102,7 @@ class _RepresentantListScreenState extends State<RepresentantListScreen> {
   Future<bool> addRepresentant(String firstName, String lastName, String email,
       String password, String codeSage) async {
     final url =
-        Uri.parse('http://192.168.100.105:5274/api/auth/register'); // 🔗 à adapter
+        Uri.parse('http://192.168.1.18:5274/api/auth/register'); // 🔗 à adapter
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},

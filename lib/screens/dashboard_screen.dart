@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'order_list_screen.dart'; // 👈 Assure-toi que ce chemin est correct
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -25,7 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> fetchStats() async {
     try {
-      final url = Uri.parse('http://192.168.100.105:5274/api/dashboard/stats');
+      final url = Uri.parse('http://192.168.1.18:5274/api/dashboard/stats');
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -47,7 +46,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> fetchOrders() async {
-    final url = Uri.parse('http://192.168.100.105:5274/api/orders/full');
+    final url = Uri.parse('http://192.168.1.18:5274/api/orders/full');
     final response = await http.get(url);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as List;
@@ -74,23 +73,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget buildOrderSection() {
     return Expanded(
-      child: ListView.builder(
-        itemCount: orders.length,
-        itemBuilder: (context, index) {
-          final order = orders[index];
-          return ExpansionTile(
-            title: Text("Commande #${order.orderId} - ${order.client}"),
-            subtitle: Text("Date: ${order.createdAt.split('T')[0]} | Total: ${order.total.toStringAsFixed(2)} TND"),
-            children: order.items.map((item) {
-              return ListTile(
-                title: Text(item.productName),
-                subtitle: Text("x${item.quantity} × ${item.unitPrice.toStringAsFixed(2)} TND"),
-                trailing: Text("${item.totalPrice.toStringAsFixed(2)} TND"),
-              );
-            }).toList(),
-          );
-        },
-      ),
+      child: orders.isEmpty
+          ? const Center(child: Text("Aucune commande récente."))
+          : ListView.builder(
+              itemCount: orders.length > 3 ? 3 : orders.length,
+              itemBuilder: (context, index) {
+                final order = orders[index];
+                return ExpansionTile(
+                  title: Text("Commande #${order.orderId} - ${order.client}"),
+                  subtitle: Text("Date: ${order.createdAt.split('T')[0]} | Total: ${order.total.toStringAsFixed(2)} TND"),
+                  children: order.items.map((item) {
+                    return ListTile(
+                      title: Text(item.productName),
+                      subtitle: Text("x${item.quantity} × ${item.unitPrice.toStringAsFixed(2)} TND"),
+                      trailing: Text("${item.totalPrice.toStringAsFixed(2)} TND"),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
     );
   }
 
@@ -110,30 +111,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   buildStatCard("Produits", "$nbProduits produits", Icons.inventory_2, Colors.orange),
-                  buildStatCard("Représentants", "$nbClients représentants", Icons.people, Colors.blue),
+                  buildStatCard("Représentants", "$nbClients", Icons.people, Colors.blue),
                   buildStatCard("Total ventes", "${ventesTotales.toStringAsFixed(3)} TND", Icons.attach_money, Colors.green),
                   const SizedBox(height: 20),
-
-                  // ✅ BOUTON POUR AFFICHER LA PAGE COMPLÈTE DES COMMANDES
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const OrderListScreen()),
-                      );
-                    },
-                    icon: const Icon(Icons.list),
-                    label: const Text("Voir toutes les commandes"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-                  const Text("📦 Liste des commandes", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text("📦 Commandes récentes", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   buildOrderSection(),
                 ],

@@ -54,7 +54,7 @@ class _ReclamationScreenState extends State<ReclamationScreen> {
       return;
     }
 
-    final url = Uri.parse("http://192.168.100.105:5274/api/reclamation");
+    final url = Uri.parse("http://192.168.1.18:5274/api/reclamation");
 
     final body = jsonEncode({
       "client": widget.client,

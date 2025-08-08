@@ -7,7 +7,7 @@ import '../models/cart_item.dart';
 import '../models/client.dart';
 
 class ApiService {
-  static const String _baseUrl = 'http://192.168.100.105:5274/api';
+  static const String _baseUrl = 'http://192.168.1.18:5274/api';
 
   // 🔐 Connexion
   static Future<Map<String, dynamic>> login(String email, String password) async {

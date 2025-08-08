@@ -67,7 +67,7 @@ class _VisitScreenState extends State<VisitScreen> {
   }
 
   Future<void> _saveVisit() async {
-    final url = Uri.parse('http://192.168.100.105:5274/api/visite');
+    final url = Uri.parse('http://192.168.1.18:5274/api/visite');
 
     final body = jsonEncode({
       "codeVisite": codeVisite,

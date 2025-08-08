@@ -14,8 +14,6 @@ namespace TrikiApi.Data
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderItem> OrderItems { get; set; }
 public DbSet<Reclamation> Reclamations { get; set; }
-
-
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
            modelBuilder.Entity<Client>()

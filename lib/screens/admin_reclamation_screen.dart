@@ -22,7 +22,7 @@ class _AdminReclamationScreenState extends State<AdminReclamationScreen> {
   }
 
   Future<void> fetchAllReclamations() async {
-    final url = Uri.parse("http://192.168.100.105:5274/api/reclamation"); // 🟢 Endpoint pour TOUTES les réclamations
+    final url = Uri.parse("http://192.168.1.18:5274/api/reclamation"); // 🟢 Endpoint pour TOUTES les réclamations
 
     try {
       final response = await http.get(url);
