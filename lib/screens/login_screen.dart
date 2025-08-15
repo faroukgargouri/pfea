@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
-import 'Representant_Home_Page.dart'; // À importer si ce n’est pas déjà fait
+import 'representant_home_page.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,7 +15,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   bool isLoading = false;
 
-  void _loginUser() async {
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loginUser() async {
     final email = emailController.text.trim();
     final password = passwordController.text.trim();
 
@@ -28,31 +35,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => isLoading = true);
     final result = await ApiService.login(email, password);
+    if (!mounted) return;
     setState(() => isLoading = false);
 
-    if (result['success']) {
+    if (result['success'] == true) {
       final user = result['data'];
-      final userId = user['id'];
-      final role = user['role'];
-      final fullName = "${user['firstName']} ${user['lastName']}";
-      final codeSage = user['codeSage'] ?? "";
+      final userId = user['id'] as int;
+      final roleRaw = (user['role'] ?? '').toString();
+      final role = roleRaw.toLowerCase().trim();
+      final first = (user['firstName'] ?? '').toString();
+      final last = (user['lastName'] ?? '').toString();
+      final fullName = "$first $last".trim();
+      final codeSage = (user['codeSage'] ?? '').toString();
 
       final prefs = await SharedPreferences.getInstance();
-      prefs.setInt('userId', userId);
-      prefs.setString('fullName', fullName);
-      prefs.setString('codeSage', codeSage);
-      prefs.setString('role', role);
+      await prefs.setInt('userId', userId);
+      await prefs.setString('fullName', fullName);
+      await prefs.setString('codeSage', codeSage);
+      await prefs.setString('role', role);
 
-      if (role == 'Admin') {
+      if (!mounted) return;
+      if (role == 'admin') {
         Navigator.pushReplacementNamed(context, '/admin');
-      } else if (role == 'Représentant') {
+      } else {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const RepresentantHomePage()),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Rôle non reconnu")),
+          MaterialPageRoute(builder: (_) => const RepresentantHomePage()),
         );
       }
     } else {
@@ -76,15 +84,22 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 24),
               const Text(
                 'Bienvenue',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.indigo),
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo,
+                ),
               ),
               const SizedBox(height: 24),
               TextField(
                 controller: emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.email_outlined),
                   labelText: 'Email',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -94,7 +109,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.lock_outline),
                   labelText: 'Mot de passe',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -104,13 +121,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: isLoading ? null : _loginUser,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text('Connexion'),
                 ),
               ),
+              // ⬇️ Offline button removed (no other design changes)
             ],
           ),
         ),

@@ -24,7 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> fetchStats() async {
     try {
-      final url = Uri.parse('http://192.168.1.18:5274/api/dashboard/stats');
+      final url = Uri.parse('http://192.168.0.103:5274/api/dashboard/stats');
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -46,7 +46,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> fetchOrders() async {
-    final url = Uri.parse('http://192.168.1.18:5274/api/orders/full');
+    final url = Uri.parse('http://192.168.0.103:5274/api/orders/full');
     final response = await http.get(url);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as List;

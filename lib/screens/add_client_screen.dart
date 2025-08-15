@@ -21,7 +21,7 @@ class _AddClientScreenState extends State<AddClientScreen> {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getInt('userId') ?? 0;
 
-    final url = Uri.parse('http://192.168.1.18:5274/api/client');
+    final url = Uri.parse('http://192.168.0.103:5274/api/client');
 
     setState(() => isLoading = true);
 

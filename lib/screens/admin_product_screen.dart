@@ -1,11 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:http/http.dart' as http;
+
 import '../models/product.dart';
 import 'dashboard_screen.dart';
 import 'representant_list_screen.dart';
 import 'admin_reclamation_screen.dart';
-
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class AdminProductScreen extends StatefulWidget {
   const AdminProductScreen({super.key});
@@ -37,7 +38,7 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
     setState(() => isLoading = true);
     try {
       final response =
-          await http.get(Uri.parse('http://192.168.1.18:5274/api/product'));
+          await http.get(Uri.parse('http://192.168.0.103:5274/api/product'));
       if (response.statusCode == 200) {
         final List decoded = jsonDecode(response.body);
         products = decoded.map((json) => Product.fromJson(json)).toList();
@@ -58,7 +59,7 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
     );
 
     final response = await http.post(
-      Uri.parse('http://192.168.1.18:5274/api/product'),
+      Uri.parse('http://192.168.0.103:5274/api/product'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(product.toJson()),
     );
@@ -80,11 +81,19 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
   }
 
   Future<void> _deleteProduct(int id) async {
-    final response = await http.delete(
-        Uri.parse('http://192.168.1.18:5274/api/product/$id'));
+    final response =
+        await http.delete(Uri.parse('http://192.168.0.103:5274/api/product/$id'));
     if (response.statusCode == 200) {
       await _loadProducts();
     }
+  }
+
+  String? _safeUrl(String? url) {
+    if (url == null) return null;
+    final u = url.trim();
+    if (u.isEmpty) return null;
+    if (u.startsWith('http://') || u.startsWith('https://')) return u;
+    return null;
   }
 
   InputDecoration _input(String label) => InputDecoration(
@@ -136,6 +145,18 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
   }
 
   Widget _buildProductPage() {
+    final width = MediaQuery.of(context).size.width;
+    final crossAxis = width < 500 ? 2 : (width < 800 ? 3 : 4);
+
+    double aspect;
+    if (crossAxis == 2) {
+      aspect = 0.60;
+    } else if (crossAxis == 3) {
+      aspect = 0.70;
+    } else {
+      aspect = 0.78;
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F2),
       appBar: AppBar(
@@ -159,7 +180,8 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
             const SizedBox(height: 8),
             TextField(controller: nameCtrl, decoration: _input("Nom")),
             const SizedBox(height: 8),
-            TextField(controller: descriptionCtrl, decoration: _input("Description")),
+            TextField(
+                controller: descriptionCtrl, decoration: _input("Description")),
             const SizedBox(height: 8),
             TextField(
                 controller: priceCtrl,
@@ -172,42 +194,224 @@ class _AdminProductScreenState extends State<AdminProductScreen> {
             const SizedBox(height: 8),
             TextField(controller: referenceCtrl, decoration: _input("Référence")),
             const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _addProduct,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text("Ajouter"),
-            ),
-            const Divider(height: 32),
-            const Text("Liste des produits",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            if (isLoading)
-              const CircularProgressIndicator()
-            else
-              ...products.map(
-                (p) => Card(
-                  child: ListTile(
-                    leading: Image.network(
-                      p.imageUrl,
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.cover,
-                    ),
-                    title: Text(p.name),
-                    subtitle: Text(
-                        "${p.category} • ${p.price.toStringAsFixed(3)} TND\nRef: ${p.reference}"),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _deleteProduct(p.id!),
-                    ),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _addProduct,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo,
+                  foregroundColor: Colors.white, // text/icons white
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text(
+                  "Ajouter",
+                  style: TextStyle(
+                    color: Colors.white, // force white text
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
+            ),
+            const Divider(height: 32),
+            const Text(
+              "Liste des produits",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            const SizedBox(height: 12),
+            if (isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (products.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(child: Text("Aucun produit pour le moment.")),
+              )
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                itemCount: products.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxis,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: aspect,
+                ),
+                itemBuilder: (_, i) {
+                  final p = products[i];
+                  return _ProductCard(
+                    product: p,
+                    imageUrl: _safeUrl(p.imageUrl),
+                    onDelete: () => _deleteProduct(p.id!),
+                  );
+                },
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProductCard extends StatelessWidget {
+  final Product product;
+  final String? imageUrl;
+  final VoidCallback onDelete;
+
+  const _ProductCard({
+    required this.product,
+    required this.imageUrl,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 0.5,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {},
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 12,
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: imageUrl == null
+                    ? _ImagePlaceholder(name: product.name)
+                    : CachedNetworkImage(
+                        imageUrl: imageUrl!,
+                        fit: BoxFit.cover,
+                        fadeInDuration: const Duration(milliseconds: 200),
+                        placeholder: (_, __) => const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        errorWidget: (_, __, ___) =>
+                            _ImagePlaceholder(name: product.name),
+                      ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Supprimer',
+                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          iconSize: 18,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: onDelete,
+                        ),
+                      ],
+                    ),
+                    if (product.category.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          product.category,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.indigo,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "${product.price.toStringAsFixed(3)} TND",
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Réf: ${product.reference}",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImagePlaceholder extends StatelessWidget {
+  final String name;
+  const _ImagePlaceholder({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = name.isNotEmpty
+        ? name.trim().split(RegExp(r'\s+')).take(2).map((w) => w[0]).join().toUpperCase()
+        : 'P';
+
+    return Container(
+      color: Colors.grey.shade200,
+      child: Center(
+        child: CircleAvatar(
+          radius: 26,
+          backgroundColor: Colors.grey.shade400,
+          child: Text(
+            initials,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+            ),
+          ),
         ),
       ),
     );

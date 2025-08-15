@@ -25,7 +25,7 @@ class _ReclamationListScreenState extends State<ReclamationListScreen> {
   }
 
   Future<void> fetchReclamations() async {
-    final url = Uri.parse("http://192.168.1.18:5274/api/reclamation/user/${widget.userId}");
+    final url = Uri.parse("http://192.168.0.103:5274/api/reclamation/user/${widget.userId}");
 
     try {
       final response = await http.get(url);

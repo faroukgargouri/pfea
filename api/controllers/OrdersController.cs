@@ -58,6 +58,8 @@ namespace TrikiApi.Controllers
                 .Where(o => o.UserId == userId)
                 .ToListAsync();
 
+#pragma warning disable CS8602 // Dereference of a possibly null reference.
+
             var result = orders.Select(o => new
             {
                 o.Id,
@@ -72,6 +74,8 @@ namespace TrikiApi.Controllers
                     oi.TotalPrice
                 })
             });
+#pragma warning restore CS8602 // Dereference of a possibly null reference.
+
 
             return Ok(result);
         }
