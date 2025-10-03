@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/screens/order_details_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
@@ -22,10 +23,10 @@ class _OrderListScreenState extends State<OrderListScreen> {
 
   Future<void> _fetchOrders() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    int userId = prefs.getInt('userId') ?? 0;
-
+    String clientId = prefs.getString('clientId') ?? '0';
+    print(prefs.getString('clientId'));
     try {
-      final fetchedOrders = await ApiService.getOrders(userId);
+      final fetchedOrders = await ApiService.getOrdersByClientId(clientId);
       setState(() {
         orders = fetchedOrders;
         isLoading = false;
@@ -62,13 +63,18 @@ class _OrderListScreenState extends State<OrderListScreen> {
                           ],
                         ),
                         trailing: const Icon(Icons.arrow_forward_ios),
-                        onTap: () {
-                          // Tu peux ajouter un écran de détail ici si besoin
-                        },
+                       onTap: () {
+                          Navigator.push(
+                          context,
+                           MaterialPageRoute(
+                           builder: (_) => OrderDetailsScreen(order: order),
                       ),
                     );
                   },
                 ),
     );
+                }
+    ));
+   } 
   }
-}
+
