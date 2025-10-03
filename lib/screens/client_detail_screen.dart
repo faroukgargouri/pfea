@@ -611,6 +611,13 @@ class _QuickPanels extends StatelessWidget {
     }
   }
 
+  Future<void> _openMapWithCoords(double lat, double lon) async {
+    final Uri uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon");
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   Future<void> _openMap(String address) async {
     final Uri uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$address");
     if (await canLaunchUrl(uri)) {
@@ -623,6 +630,7 @@ class _QuickPanels extends StatelessWidget {
         _miniPanel(
           title: 'Contact & Localisation',
           child: Row(children: [
+            // ----- Bouton Appeler -----
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: client.tel != null && client.tel!.isNotEmpty
@@ -640,11 +648,17 @@ class _QuickPanels extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+
+            // ----- Bouton Localiser -----
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: client.adresseDefaut != null && client.adresseDefaut!.isNotEmpty
-                    ? () => _openMap(client.adresseDefaut!)
-                    : null,
+                onPressed: () {
+                  if (client.latitudeClient != null && client.longitudeClient != null) {
+                    _openMapWithCoords(client.latitudeClientDec, client.longitudeClientDec);
+                  } else if (client.adresseDefaut != null && client.adresseDefaut!.isNotEmpty) {
+                    _openMap(client.adresseDefaut!);
+                  }
+                },
                 icon: const Icon(Icons.location_on, size: 18),
                 label: const Text('Localiser'),
                 style: ElevatedButton.styleFrom(
@@ -659,6 +673,7 @@ class _QuickPanels extends StatelessWidget {
           ]),
         ),
       ]);
+}
 
   Widget _miniPanel({required String title, required Widget child}) => Container(
         padding: const EdgeInsets.all(14),
@@ -672,7 +687,7 @@ class _QuickPanels extends StatelessWidget {
           ],
         ),
       );
-}
+
 
 BoxDecoration _card({Color? fill}) => BoxDecoration(
       color: fill ?? Colors.white,
