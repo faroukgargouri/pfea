@@ -1,33 +1,39 @@
 class Representant {
   final int id;
-  final String firstName;
-  final String lastName;
-  final String email;
   final String codeSage;
-  final String role;
+  final String fullName;
+  final String email;
+    final String? site;
+  final String? password;
 
   Representant({
     required this.id,
-    required this.firstName,
-    required this.lastName,
-    required this.email,
     required this.codeSage,
-    required this.role,
+    required this.fullName,
+    required this.email,
+    required this.site,
+    this.password,
   });
 
   factory Representant.fromJson(Map<String, dynamic> json) {
-    // 👇 Vérifie que le champ id est bien un int, sinon lance une erreur claire
-    if (json['id'] == null) {
-      throw FormatException("Le champ 'id' est requis et ne peut pas être null.");
-    }
-
     return Representant(
-      id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
-      firstName: json['firstName'] ?? '',
-      lastName: json['lastName'] ?? '',
+      id: json['id'] ?? 0,
+      codeSage: json['codeSage'] ?? json['code_Sage'] ?? '', 
+      fullName: json['fullName'] ?? '',
       email: json['email'] ?? '',
-      codeSage: json['codeSage'] ?? '',
-      role: json['role'] ?? 'Représentant',
+      site: json ['site']?? '',
+      password: json['password'],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'codeSage': codeSage, 
+      'fullName': fullName,
+      'email': email,
+      'password': password,
+      'site' : site,
+    };
   }
 }

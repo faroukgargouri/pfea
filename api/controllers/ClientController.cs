@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TrikiApi.Data;
-using TrikiApi.Models;
 
 namespace TrikiApi.Controllers
 {
@@ -9,71 +8,50 @@ namespace TrikiApi.Controllers
     [Route("api/[controller]")]
     public class ClientController : ControllerBase
     {
-        private readonly TrikiDbContext _context;
+        private readonly TrikiDbContext _db;
+        public ClientController(TrikiDbContext db) => _db = db;
 
-        public ClientController(TrikiDbContext context)
+        // GET /api/client/user/3   → all clients owned by rep userId=3
+        [HttpGet("user/{userId:int}")]
+        public async Task<IActionResult> GetByUser(int userId)
         {
-            _context = context;
-        }
-[HttpGet("user/{userId}")]
-public async Task<IActionResult> GetClientsByUser(int userId)
-{
-    try
-    {
-        var clients = await _context.Clients
-            .Where(c => c.UserId == userId)
-            .ToListAsync();
+            var okUser = await _db.Users.AnyAsync(u => u.Id == userId);
+            if (!okUser) return NotFound(new { message = "Utilisateur introuvable." });
 
-        return Ok(clients);
-    }
-    catch (Exception ex)
-    {
-        return StatusCode(500, new { message = "Erreur interne", error = ex.Message });
-    }
-}
+            var rows = await _db.Clients
+                .Where(c => c.UserId == userId)
+                .OrderBy(c => c.RaisonSociale)
+                .Select(c => new {
+                    c.Id,
+                    c.CodeClient,
+                    c.RaisonSociale,
+                    c.Telephone,
+                    c.Ville,
+                    c.UserId
+                })
+                .ToListAsync();
 
-
-        [HttpGet("check/{codeClient}")]
-        public IActionResult CheckClientExists(string codeClient)
-        {
-            var exists = _context.Clients.Any(c => c.CodeClient == codeClient);
-            return exists ? Ok() : NotFound();
+            return Ok(rows); // JSON camelCase by default
         }
 
-        [HttpPost]
-        public async Task<IActionResult> AddClient([FromBody] Client client)
+        // optional: /api/client/search?userId=3&term=sfax
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] int userId, [FromQuery] string term = "")
         {
-            if (_context.Clients.Any(c => c.CodeClient == client.CodeClient))
-                return BadRequest(new { message = "Ce code client existe déjà." });
+            term = (term ?? "").Trim().ToLowerInvariant();
+            var q = _db.Clients.Where(c => c.UserId == userId);
 
-            _context.Clients.Add(client);
-            await _context.SaveChangesAsync();
-            return Ok(client);
-        }
+            if (!string.IsNullOrEmpty(term))
+                q = q.Where(c =>
+                    c.CodeClient.ToLower().Contains(term) ||
+                    c.RaisonSociale.ToLower().Contains(term) ||
+                    (c.Ville ?? "").ToLower().Contains(term));
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateClient(int id, [FromBody] Client updated)
-        {
-            var client = await _context.Clients.FindAsync(id);
-            if (client == null) return NotFound(new { message = "Client introuvable" });
+            var rows = await q.OrderBy(c => c.RaisonSociale).Select(c => new {
+                c.Id, c.CodeClient, c.RaisonSociale, c.Telephone, c.Ville, c.UserId
+            }).ToListAsync();
 
-            client.CodeClient = updated.CodeClient;
-            client.RaisonSociale = updated.RaisonSociale;
-            client.Telephone = updated.Telephone;
-            client.Ville = updated.Ville;
-            await _context.SaveChangesAsync();
-            return Ok(client);
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteClient(int id)
-        {
-            var client = await _context.Clients.FindAsync(id);
-            if (client == null) return NotFound(new { message = "Client introuvable" });
-
-            _context.Clients.Remove(client);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Client supprimé" });
+            return Ok(rows);
         }
     }
 }

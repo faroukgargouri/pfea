@@ -11,22 +11,22 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final emailController = TextEditingController();
+  final codeSageController = TextEditingController();
   final passwordController = TextEditingController();
   bool isLoading = false;
 
   @override
   void dispose() {
-    emailController.dispose();
+    codeSageController.dispose();
     passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _loginUser() async {
-    final email = emailController.text.trim();
+    final codeSage = codeSageController.text.trim();
     final password = passwordController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
+    if (codeSage.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Veuillez remplir tous les champs")),
       );
@@ -34,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => isLoading = true);
-    final result = await ApiService.login(email, password);
+    final result = await ApiService.login(codeSage, password); // ✅ login avec codeSage
     if (!mounted) return;
     setState(() => isLoading = false);
 
@@ -91,18 +91,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+
+              // ✅ Champ Code Sage
               TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
+                controller: codeSageController,
+                keyboardType: TextInputType.text,
                 decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  labelText: 'Email',
+                  prefixIcon: const Icon(Icons.badge_outlined),
+                  labelText: 'Code Sage',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
+
+              // ✅ Champ Mot de passe
               TextField(
                 controller: passwordController,
                 obscureText: true,
@@ -115,6 +119,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+
+              // ✅ Bouton connexion
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -130,7 +136,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       : const Text('Connexion'),
                 ),
               ),
-              // ⬇️ Offline button removed (no other design changes)
             ],
           ),
         ),

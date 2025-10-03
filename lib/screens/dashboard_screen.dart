@@ -1,6 +1,11 @@
+// lib/screens/dashboard_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:fl_chart/fl_chart.dart'; // ✅ pour graphiques
+import '../data/api_config.dart';
+
+const kPrimaryBlue = Color(0xFF0D47A1);
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -10,167 +15,196 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int nbProduits = 0;
-  int nbClients = 0;
-  double ventesTotales = 0.0;
-  List<Order> orders = [];
   bool isLoading = true;
+  Map<String, dynamic> stats = {};
 
   @override
   void initState() {
     super.initState();
-    fetchStats();
+    _fetchDashboardData();
   }
 
-  Future<void> fetchStats() async {
+  Future<void> _fetchDashboardData() async {
+    setState(() => isLoading = true);
     try {
-      final url = Uri.parse('http://192.168.0.103:5274/api/dashboard/stats');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          nbProduits = data['produits'];
-          nbClients = data['clients'];
-          ventesTotales = (data['ventes'] as num).toDouble();
-        });
-        await fetchOrders();
+      final statsUri = Uri.parse('$apiRoot/Admin/stats'); // ✅ endpoint admin
+      final res = await http.get(statsUri);
+      if (res.statusCode == 200) {
+        stats = jsonDecode(res.body) as Map<String, dynamic>;
       } else {
-        throw Exception("Erreur API");
+        throw Exception("Erreur chargement stats");
       }
+      setState(() => isLoading = false);
     } catch (e) {
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur chargement stats : $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Erreur: $e")),
+        );
+      }
     }
   }
 
-  Future<void> fetchOrders() async {
-    final url = Uri.parse('http://192.168.0.103:5274/api/orders/full');
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as List;
-      setState(() {
-        orders = data.map((json) => Order.fromJson(json)).toList();
-        isLoading = false;
-      });
-    } else {
-      throw Exception("Erreur chargement commandes");
-    }
-  }
-
-  Widget buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Card(
-      elevation: 4,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 6),
       child: ListTile(
-        leading: CircleAvatar(backgroundColor: color, child: Icon(icon, color: Colors.white)),
-        title: Text(title),
-        subtitle: Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        leading: CircleAvatar(
+          backgroundColor: color,
+          child: Icon(icon, color: Colors.white),
+        ),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        subtitle: Text(value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget buildOrderSection() {
-    return Expanded(
-      child: orders.isEmpty
-          ? const Center(child: Text("Aucune commande récente."))
-          : ListView.builder(
-              itemCount: orders.length > 3 ? 3 : orders.length,
-              itemBuilder: (context, index) {
-                final order = orders[index];
-                return ExpansionTile(
-                  title: Text("Commande #${order.orderId} - ${order.client}"),
-                  subtitle: Text("Date: ${order.createdAt.split('T')[0]} | Total: ${order.total.toStringAsFixed(2)} TND"),
-                  children: order.items.map((item) {
-                    return ListTile(
-                      title: Text(item.productName),
-                      subtitle: Text("x${item.quantity} × ${item.unitPrice.toStringAsFixed(2)} TND"),
-                      trailing: Text("${item.totalPrice.toStringAsFixed(2)} TND"),
-                    );
-                  }).toList(),
-                );
-              },
+  /// 🟢 Histogramme : Commandes vs Réclamations vs Visites
+  Widget _buildBarChart() {
+    final commandes = (stats['commandes'] ?? 0).toDouble();
+    final reclamations = (stats['reclamations'] ?? 0).toDouble();
+    final visites = (stats['visites'] ?? 0).toDouble();
+
+    final maxY = [commandes, reclamations, visites].reduce((a, b) => a > b ? a : b) + 5;
+
+    return SizedBox(
+      height: 250,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxY,
+          barTouchData: BarTouchData(enabled: true),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(showTitles: true, reservedSize: 30),
             ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, _) {
+                  switch (value.toInt()) {
+                    case 0:
+                      return const Text("Cmds");
+                    case 1:
+                      return const Text("Récl");
+                    case 2:
+                      return const Text("Visites");
+                  }
+                  return const Text("");
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: [
+            BarChartGroupData(x: 0, barRods: [
+              BarChartRodData(
+                toY: commandes,
+                color: Colors.teal,
+                width: 30,
+                borderRadius: BorderRadius.circular(6),
+              )
+            ]),
+            BarChartGroupData(x: 1, barRods: [
+              BarChartRodData(
+                toY: reclamations,
+                color: Colors.red,
+                width: 30,
+                borderRadius: BorderRadius.circular(6),
+              )
+            ]),
+            BarChartGroupData(x: 2, barRods: [
+              BarChartRodData(
+                toY: visites,
+                color: Colors.purple,
+                width: 30,
+                borderRadius: BorderRadius.circular(6),
+              )
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 🟡 Jauge (ventes en TND)
+  Widget _buildVentesGauge() {
+    final ventes = (stats['ventes'] ?? 0).toDouble();
+    final maxTarget = ventes > 10000 ? ventes * 1.2 : 10000; // cible arbitraire
+    final percent = (ventes / maxTarget * 100).clamp(0, 100);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const Text("Progression des ventes",
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 150,
+              height: 150,
+              child: CircularProgressIndicator(
+                value: percent / 100,
+                strokeWidth: 12,
+                backgroundColor: Colors.grey[300],
+                valueColor: const AlwaysStoppedAnimation(Colors.green),
+              ),
+            ),
+            Text("${ventes.toStringAsFixed(2)} TND",
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('📊 Tableau de bord'),
-        backgroundColor: Colors.indigo,
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  buildStatCard("Produits", "$nbProduits produits", Icons.inventory_2, Colors.orange),
-                  buildStatCard("Représentants", "$nbClients", Icons.people, Colors.blue),
-                  buildStatCard("Total ventes", "${ventesTotales.toStringAsFixed(3)} TND", Icons.attach_money, Colors.green),
-                  const SizedBox(height: 20),
-                  const Text("📦 Commandes récentes", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  buildOrderSection(),
-                ],
+     
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _fetchDashboardData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildStatCard("Produits",
+                        "${stats['produits'] ?? 0}", Icons.inventory, Colors.orange),
+                    _buildStatCard("Représentants",
+                        "${stats['representants'] ?? 0}", Icons.people, Colors.blue),
+                    _buildStatCard("Visites",
+                        "${stats['visites'] ?? 0}", Icons.location_on, Colors.purple),
+                    _buildStatCard("Réclamations",
+                        "${stats['reclamations'] ?? 0}", Icons.report, Colors.red),
+                    _buildStatCard("Commandes",
+                        "${stats['commandes'] ?? 0}", Icons.shopping_cart, Colors.teal),
+                    _buildStatCard("Total ventes",
+                        "${(stats['ventes'] ?? 0).toStringAsFixed(2)} TND",
+                        Icons.attach_money,
+                        Colors.green),
+
+                    const SizedBox(height: 20),
+                    const Text("📉 Commandes vs Réclamations vs Visites",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    _buildBarChart(),
+
+                    const SizedBox(height: 20),
+                    _buildVentesGauge(),
+                  ],
+                ),
               ),
-      ),
-    );
-  }
-}
-
-// 🔽 MODELES
-
-class OrderItem {
-  final String productName;
-  final int quantity;
-  final double unitPrice;
-  final double totalPrice;
-
-  OrderItem({
-    required this.productName,
-    required this.quantity,
-    required this.unitPrice,
-    required this.totalPrice,
-  });
-
-  factory OrderItem.fromJson(Map<String, dynamic> json) {
-    return OrderItem(
-      productName: json['productName'],
-      quantity: json['quantity'],
-      unitPrice: (json['unitPrice'] as num).toDouble(),
-      totalPrice: (json['totalPrice'] as num).toDouble(),
-    );
-  }
-}
-
-class Order {
-  final int orderId;
-  final String client;
-  final String createdAt;
-  final double total;
-  final List<OrderItem> items;
-
-  Order({
-    required this.orderId,
-    required this.client,
-    required this.createdAt,
-    required this.total,
-    required this.items,
-  });
-
-  factory Order.fromJson(Map<String, dynamic> json) {
-    return Order(
-      orderId: json['orderId'],
-      client: json['client'],
-      createdAt: json['createdAt'],
-      total: (json['total'] as num).toDouble(),
-      items: (json['items'] as List).map((item) => OrderItem.fromJson(item)).toList(),
+            ),
     );
   }
 }

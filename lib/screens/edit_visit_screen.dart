@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/visite.dart';
 import '../services/api_service.dart';
 
@@ -16,18 +17,43 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
   late TextEditingController _raisonCtrl;
   late TextEditingController _noteCtrl;
 
+  DateTime? _selectedDate; // ✅ on stocke la vraie date
+
   @override
   void initState() {
     super.initState();
-    _dateCtrl = TextEditingController(text: widget.visite.dateVisite);
+    _selectedDate = widget.visite.dateVisite;
+    _dateCtrl = TextEditingController(
+      text: DateFormat('yyyy-MM-dd').format(widget.visite.dateVisite),
+    );
     _codeClientCtrl = TextEditingController(text: widget.visite.codeClient);
     _raisonCtrl = TextEditingController(text: widget.visite.raisonSociale);
-    _noteCtrl = TextEditingController(text: widget.visite.compteRendu);
+    _noteCtrl = TextEditingController(text: widget.visite.compteRendu ?? "");
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+        _dateCtrl.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
   }
 
   Future<void> _updateVisite() async {
+    if (_selectedDate == null) {
+      _showError("Veuillez choisir une date valide.");
+      return;
+    }
+
     final updated = widget.visite.copyWith(
-      dateVisite: _dateCtrl.text.trim(),
+      dateVisite: _selectedDate!, // ✅ garde un DateTime
       codeClient: _codeClientCtrl.text.trim(),
       raisonSociale: _raisonCtrl.text.trim(),
       compteRendu: _noteCtrl.text.trim(),
@@ -35,10 +61,11 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
 
     try {
       await ApiService.updateVisite(widget.visite.id!, updated);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Visite modifiée avec succès.")),
       );
-      Navigator.pop(context, true); // retourne au précédent avec succès
+      Navigator.pop(context, true);
     } catch (e) {
       _showError("Erreur : $e");
     }
@@ -69,7 +96,12 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-              TextField(controller: _dateCtrl, decoration: const InputDecoration(labelText: "Date")),
+              TextField(
+                controller: _dateCtrl,
+                readOnly: true,
+                decoration: const InputDecoration(labelText: "Date"),
+                onTap: _pickDate, // ✅ ouvre un date picker
+              ),
               const SizedBox(height: 12),
               TextField(controller: _codeClientCtrl, decoration: const InputDecoration(labelText: "Code client")),
               const SizedBox(height: 12),

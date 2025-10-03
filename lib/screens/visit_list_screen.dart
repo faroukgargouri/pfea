@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
+
 import '../models/visite.dart';
 import '../services/api_service.dart';
-import 'edit_visit_screen.dart'; // ✅ Assure-toi d’avoir cette page
+import '../widgets/custom_navbar.dart'; // ✅ TrikiAppBar
 
 class VisitListScreen extends StatefulWidget {
   const VisitListScreen({super.key});
@@ -14,10 +16,22 @@ class VisitListScreen extends StatefulWidget {
 class _VisitListScreenState extends State<VisitListScreen> {
   Future<List<Visite>>? _visitesFuture;
 
+  String? _fullName;
+  String? _codeSage;
+
   @override
   void initState() {
     super.initState();
+    _loadHeaderUser();
     _loadVisites();
+  }
+
+  Future<void> _loadHeaderUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _fullName = prefs.getString('fullName');
+      _codeSage = prefs.getString('codeSage');
+    });
   }
 
   Future<void> _loadVisites() async {
@@ -29,26 +43,30 @@ class _VisitListScreenState extends State<VisitListScreen> {
     });
   }
 
-  Future<void> _deleteVisite(int id) async {
+  String _formatDate(dynamic date) {
     try {
-      await ApiService.deleteVisite(id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Visite supprimée.")),
-      );
-      _loadVisites(); // recharger
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erreur suppression : $e")),
-      );
+      if (date == null) return "—";
+      final parsed = date is DateTime ? date : DateTime.parse(date.toString());
+      return DateFormat('dd/MM/yyyy HH:mm').format(parsed);
+    } catch (_) {
+      return date.toString();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Mes Visites"),
-        backgroundColor: Colors.indigo,
+      // ✅ TrikiAppBar à la place de AppBar classique
+      appBar: TrikiAppBar(
+        fullName: _fullName,
+        codeSage: _codeSage,
+        blueNavItems: const [
+          BlueNavItem(
+            label: 'MES VISITES',
+            selected: true,
+          ),
+        ],
+        blueNavVariant: BlueNavbarVariant.textOnly,
       ),
       body: FutureBuilder<List<Visite>>(
         future: _visitesFuture,
@@ -56,66 +74,43 @@ class _VisitListScreenState extends State<VisitListScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            return Center(child: Text("Erreur : ${snapshot.error}"));
+            return Center(child: Text("❌ Erreur : ${snapshot.error}"));
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(child: Text("Aucune visite trouvée."));
           }
 
           final visites = snapshot.data!;
-          return ListView.builder(
-            itemCount: visites.length,
-            itemBuilder: (context, index) {
-              final visite = visites[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: ListTile(
-                  title: Text("${visite.raisonSociale} (${visite.codeClient})"),
-                  subtitle: Text("📅 ${visite.dateVisite}\n📝 ${visite.compteRendu}"),
-                  isThreeLine: true,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.orange),
-                        onPressed: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => EditVisitScreen(visite: visite)),
-                          );
-                          if (result == true) _loadVisites();
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _confirmDelete(context, visite.id!),
-                      ),
-                    ],
+          return RefreshIndicator(
+            onRefresh: _loadVisites,
+            child: ListView.builder(
+              itemCount: visites.length,
+              itemBuilder: (context, index) {
+                final v = visites[index];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 3,
+                  child: ListTile(
+                    leading: const Icon(Icons.event_note, color: Colors.indigo),
+                    title: Text(v.raisonSociale,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Date :  ${_formatDate(v.dateVisite)}"),
+                        Text("Code Client : ${v.codeClient}"),
+                        if (v.compteRendu!.isNotEmpty)
+                          Text("CR : ${v.compteRendu}"),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           );
         },
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context, int id) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Confirmer suppression"),
-        content: const Text("Voulez-vous vraiment supprimer cette visite ?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteVisite(id);
-            },
-            child: const Text("Supprimer", style: TextStyle(color: Colors.red)),
-          ),
-        ],
       ),
     );
   }

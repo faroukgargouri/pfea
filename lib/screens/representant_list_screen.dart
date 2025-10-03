@@ -1,70 +1,7 @@
 import 'package:flutter/material.dart';
+import '../models/client.dart';
+import '../models/representant.dart';
 import '../services/api_service.dart';
-
-class Client {
-  final int id;
-  final String codeClient;
-  final String raisonSociale;
-  final String telephone;
-  final String ville;
-
-  Client({
-    required this.id,
-    required this.codeClient,
-    required this.raisonSociale,
-    required this.telephone,
-    required this.ville,
-  });
-
-  factory Client.fromJson(Map<String, dynamic> json) {
-    return Client(
-      id: (json['id'] ?? 0) as int,
-      codeClient: (json['codeClient'] ?? '') as String,
-      raisonSociale: (json['raisonSociale'] ?? '') as String,
-      telephone: (json['telephone'] ?? '') as String,
-      ville: (json['ville'] ?? '') as String,
-    );
-  }
-}
-
-class Representant {
-  final int id;
-  final String firstName;
-  final String lastName;
-  final String email;
-  final String codeSage;
-  final String role;
-  final List<Client> clients;
-
-  Representant({
-    required this.id,
-    required this.firstName,
-    required this.lastName,
-    required this.email,
-    required this.codeSage,
-    required this.role,
-    required this.clients,
-  });
-
-  factory Representant.fromJson(Map<String, dynamic> json) {
-    // API: representantId, representant: "First Last", email, codeSage, role, clients:[]
-    final full = (json['representant'] as String? ?? '').trim();
-    final parts = full.split(RegExp(r'\s+'));
-    final first = parts.isNotEmpty ? parts.first : '';
-    final last = parts.length > 1 ? parts.sublist(1).join(' ') : '';
-    return Representant(
-      id: (json['representantId'] ?? 0) as int,
-      firstName: first,
-      lastName: last,
-      email: (json['email'] ?? '') as String,
-      codeSage: (json['codeSage'] ?? '') as String,
-      role: (json['role'] ?? 'Représentant') as String,
-      clients: (json['clients'] as List<dynamic>? ?? [])
-          .map((c) => Client.fromJson(c as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-}
 
 class RepresentantListScreen extends StatefulWidget {
   const RepresentantListScreen({super.key});
@@ -74,251 +11,469 @@ class RepresentantListScreen extends StatefulWidget {
 }
 
 class _RepresentantListScreenState extends State<RepresentantListScreen> {
-  List<Representant> _representants = [];
-  bool _loading = true;
+  late Future<List<Representant>> _futureReps;
+  List<Representant> _allReps = [];
+  List<Representant> _filteredReps = [];
+  final Map<String, List<Client>> _clientsCache = {};
+  final Map<String, bool> _loadingCache = {};
+  bool _isSearching = false;
+  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _fetchRepresentants();
+    _futureReps = _loadReps();
   }
 
-  Future<void> _fetchRepresentants() async {
-    setState(() => _loading = true);
+  Future<List<Representant>> _loadReps() async {
+    final reps = await ApiService.getLocalRepresentants();
+    setState(() {
+      _allReps = reps;
+      _filteredReps = reps;
+    });
+    return reps;
+  }
+
+  void _filter(String q) {
+    final x = q.trim().toLowerCase();
+    setState(() {
+      _filteredReps = _allReps.where((r) {
+        return r.fullName.toLowerCase().contains(x) ||
+            r.codeSage.toLowerCase().contains(x);
+      }).toList();
+    });
+  }
+
+  Future<void> _loadClientsForRep(String codeSage) async {
+    if (_clientsCache.containsKey(codeSage)) return;
+    setState(() {
+      _loadingCache[codeSage] = true;
+    });
+
     try {
-      final raw = await ApiService.getRepresentantsByAggregated();
-      if (!mounted) return;
+      final clients = await ApiService.getClientsByUser(codeSage);
       setState(() {
-        _representants = raw.map((e) => Representant.fromJson(e)).toList();
-        _loading = false;
+        _clientsCache[codeSage] = clients;
+        _loadingCache[codeSage] = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _clientsCache[codeSage] = [];
+        _loadingCache[codeSage] = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur chargement clients: $e")),
+        );
+      }
+    }
+  }
+
+  /// ✅ Vérification Email
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    return emailRegex.hasMatch(email);
+  }
+
+  /// ➕ Ajout
+ Future<void> _addRepresentant() async {
+  final formKey = GlobalKey<FormState>();
+  final nameCtrl = TextEditingController();
+  final emailCtrl = TextEditingController();
+  final passCtrl = TextEditingController();
+  final siteCtrl = TextEditingController();
+  String? selectedCodeSage;
+  List<Representant> repsSage = [];
+
+  try {
+    repsSage = await ApiService.getSageRepresentants();
+    final usedCodes = _allReps.map((r) => r.codeSage).toSet();
+    repsSage = repsSage.where((r) => !usedCodes.contains(r.codeSage)).toList();
+  } catch (e) {
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur chargement représentants: $e')),
+        SnackBar(content: Text("Erreur chargement codes Sage: $e")),
       );
     }
   }
 
-  void _showAddDialog() {
-    final firstNameCtrl = TextEditingController();
-    final lastNameCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
-    final passwordCtrl = TextEditingController();
-    final codeSageCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Ajouter un représentant'),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(controller: firstNameCtrl, decoration: const InputDecoration(labelText: 'Prénom')),
-              TextField(controller: lastNameCtrl, decoration: const InputDecoration(labelText: 'Nom')),
-              TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
-              TextField(controller: passwordCtrl, decoration: const InputDecoration(labelText: 'Mot de passe'), obscureText: true),
-              TextField(controller: codeSageCtrl, decoration: const InputDecoration(labelText: 'Code Sage')),
-            ],
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setStateDialog) => AlertDialog(
+        title: const Text("Ajouter un représentant"),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedCodeSage,
+                  hint: const Text("Sélectionner un Code Sage"),
+                  isExpanded: true,
+                  items: repsSage.map((rep) {
+                    return DropdownMenuItem<String>(
+                      value: rep.codeSage,
+                      child: Text(rep.codeSage),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    setStateDialog(() {
+                      selectedCodeSage = val;
+                      final rep = repsSage.firstWhere((r) => r.codeSage == val);
+                      nameCtrl.text = rep.fullName;
+                    });
+                  },
+                  validator: (val) =>
+                      val == null ? "Veuillez sélectionner un Code Sage" : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: "Nom complet"),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? "Nom requis" : null,
+                ),
+                TextFormField(
+                  controller: emailCtrl,
+                  decoration: const InputDecoration(labelText: "Email"),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return "Email requis";
+                    }
+                    final emailRegex =
+                        RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                    if (!emailRegex.hasMatch(v.trim())) {
+                      return "Email invalide";
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: passCtrl,
+                  decoration: const InputDecoration(labelText: "Mot de passe"),
+                  obscureText: true,
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? "Mot de passe requis" : null,
+                ),
+                TextFormField(
+                  controller: siteCtrl,
+                  decoration: const InputDecoration(labelText: "Site"),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? "Site requis" : null,
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Annuler"),
+          ),
           ElevatedButton(
-            onPressed: () async {
-              final ok = await ApiService.registerRepresentant(
-                firstNameCtrl.text.trim(),
-                lastNameCtrl.text.trim(),
-                emailCtrl.text.trim(),
-                passwordCtrl.text.trim(),
-                codeSageCtrl.text.trim(),
-              );
-              if (!mounted) return;
-              if (ok) {
-                Navigator.pop(context);
-                await _fetchRepresentants();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Représentant ajouté.')));
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Échec de l'ajout")));
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(ctx, true);
               }
             },
-            child: const Text('Ajouter'),
+            child: const Text("Ajouter"),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  if (ok == true && selectedCodeSage != null) {
+    final newRep = {
+      "fullName": nameCtrl.text.trim(),
+      "codeSage": selectedCodeSage!,
+      "email": emailCtrl.text.trim(),
+      "password": passCtrl.text.trim(),
+      "site": siteCtrl.text.trim(),
+      "role": "Representant"
+    };
+
+    try {
+      final rep = await ApiService.addRepresentant(newRep);
+      if (rep != null) {
+        await _loadReps();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Représentant ajouté avec succès !")),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur ajout: $e")),
+        );
+      }
+    }
+  }
+}
+
+  /// ✏️ Edition
+ Future<void> _editRepresentant(Representant r) async {
+  final formKey = GlobalKey<FormState>();
+  final nameCtrl = TextEditingController(text: r.fullName);
+  final emailCtrl = TextEditingController(text: r.email);
+  final passCtrl = TextEditingController(text: r.password ?? "");
+  final siteCtrl = TextEditingController(text: r.site);
+
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text("Modifier représentant"),
+      content: Form(
+        key: formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: TextEditingController(text: r.codeSage),
+                enabled: false,
+                decoration: const InputDecoration(labelText: "Code Sage"),
+              ),
+              TextFormField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: "Nom complet"),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? "Nom requis" : null,
+              ),
+              TextFormField(
+                controller: emailCtrl,
+                decoration: const InputDecoration(labelText: "Email"),
+                keyboardType: TextInputType.emailAddress,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return "Email requis";
+                  }
+                  final emailRegex =
+                      RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                  if (!emailRegex.hasMatch(v.trim())) {
+                    return "Email invalide";
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: passCtrl,
+                decoration: const InputDecoration(labelText: "Mot de passe"),
+                obscureText: true,
+              ),
+              TextFormField(
+                controller: siteCtrl,
+                decoration: const InputDecoration(labelText: "Site"),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? "Site requis" : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text("Annuler"),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (formKey.currentState?.validate() ?? false) {
+              Navigator.pop(ctx, true);
+            }
+          },
+          child: const Text("Enregistrer"),
+        ),
+      ],
+    ),
+  );
+
+  if (ok == true) {
+    try {
+      await ApiService.updateRepresentant(
+        codeSage: r.codeSage,
+        fullName: nameCtrl.text.trim(),
+        email: emailCtrl.text.trim(),
+        password: passCtrl.text.trim().isEmpty ? null : passCtrl.text.trim(),
+        site: siteCtrl.text.trim(),
+      );
+
+      await _loadReps();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Représentant modifié avec succès")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erreur modification: $e")),
+        );
+      }
+    }
+  }
+}
+
+
+  /// 🗑️ Suppression
+  Future<void> _deleteRepresentant(Representant r) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Supprimer"),
+        content: Text("Supprimer ${r.fullName} ?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Annuler"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Supprimer"),
           ),
         ],
       ),
     );
-  }
 
-  Future<void> _editRep(Representant r) async {
-    final first = TextEditingController(text: r.firstName);
-    final last = TextEditingController(text: r.lastName);
-    final email = TextEditingController(text: r.email);
-    final codeSage = TextEditingController(text: r.codeSage);
-    String role = r.role.toLowerCase().contains('admin') ? 'admin' : 'representant';
-
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Modifier le représentant'),
-            content: SingleChildScrollView(
-              child: Column(
-                children: [
-                  TextField(controller: first, decoration: const InputDecoration(labelText: 'Prénom')),
-                  TextField(controller: last, decoration: const InputDecoration(labelText: 'Nom')),
-                  TextField(controller: email, decoration: const InputDecoration(labelText: 'Email')),
-                  TextField(controller: codeSage, decoration: const InputDecoration(labelText: 'Code Sage')),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: role,
-                    items: const [
-                      DropdownMenuItem(value: 'representant', child: Text('Représentant')),
-                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                    ],
-                    onChanged: (v) => role = v ?? role,
-                    decoration: const InputDecoration(labelText: 'Rôle'),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Enregistrer')),
-            ],
-          ),
-        ) ??
-        false;
-
-    if (!ok) return;
-
-    final normalizedRole = (role == 'admin') ? 'Admin' : 'Représentant';
-
-    final result = await ApiService.updateRepresentant(
-      r.id,
-      firstName: first.text.trim(),
-      lastName: last.text.trim(),
-      email: email.text.trim(),
-      codeSage: codeSage.text.trim(),
-      role: normalizedRole,
-    );
-
-    if (!mounted) return;
-
-    if (result['ok'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mis à jour.')));
-      _fetchRepresentants();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Échec mise à jour (HTTP ${result['status']}): ${result['body']}')),
-      );
-    }
-  }
-
-  Future<void> _deleteRep(Representant r) async {
-    final confirm = await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Supprimer ?'),
-            content: Text('Supprimer ${r.firstName} ${r.lastName} ?'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
-            ],
-          ),
-        ) ??
-        false;
-
-    if (!confirm) return;
-
-    final ok = await ApiService.deleteRepresentant(r.id);
-    if (!mounted) return;
-
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Supprimé.')));
-      _fetchRepresentants();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Échec suppression.')));
+    if (confirm == true) {
+      try {
+        await ApiService.deleteRepresentant(r.id);
+        await _loadReps();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Représentant supprimé")),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Erreur suppression: $e")),
+          );
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: const Text('Liste des représentants'),
-        backgroundColor: Colors.indigo,
-        centerTitle: true,
+        title: _isSearching
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                onChanged: _filter,
+                decoration: const InputDecoration(
+                  hintText: "Rechercher...",
+                  border: InputBorder.none,
+                ),
+              )
+            : const Text("Représentants"),
         actions: [
           IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                _isSearching = !_isSearching;
+                if (!_isSearching) {
+                  _searchCtrl.clear();
+                  _filteredReps = _allReps;
+                }
+              });
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
-            tooltip: 'Ajouter un représentant',
-            onPressed: _showAddDialog,
+            onPressed: _addRepresentant,
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView.separated(
-              itemCount: _representants.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              padding: const EdgeInsets.all(12),
-              itemBuilder: (_, i) {
-                final r = _representants[i];
-                return Card(
-                  child: ExpansionTile(
-                    controlAffinity: ListTileControlAffinity.leading,
-                    leading: const Icon(Icons.person),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Modifier',
-                          icon: const Icon(Icons.edit),
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                          onPressed: () => _editRep(r),
-                        ),
-                        IconButton(
-                          tooltip: 'Supprimer',
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                          onPressed: () => _deleteRep(r),
-                        ),
-                      ],
-                    ),
-                    title: Text(
-                      '${r.firstName} ${r.lastName}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      r.email.isNotEmpty
-                          ? r.email
-                          : (r.codeSage.isNotEmpty ? 'Code Sage: ${r.codeSage}' : '—'),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    children: r.clients.isEmpty
-                        ? const [
-                            Padding(
-                              padding: EdgeInsets.all(12.0),
-                              child: Text('Aucun client.'),
-                            ),
-                          ]
-                        : r.clients
-                            .map(
-                              (c) => ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.account_circle_outlined),
-                                title: Text(c.raisonSociale),
-                                subtitle: Text('📞 ${c.telephone} • ${c.ville}'),
-                              ),
-                            )
-                            .toList(),
+      body: FutureBuilder<List<Representant>>(
+        future: _futureReps,
+        builder: (ctx, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              _allReps.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text("Erreur: ${snapshot.error}"));
+          }
+
+          if (_filteredReps.isEmpty) {
+            return const Center(child: Text("Aucun représentant trouvé."));
+          }
+
+          return ListView.builder(
+            itemCount: _filteredReps.length,
+            itemBuilder: (ctx, i) {
+              final r = _filteredReps[i];
+              final clients = _clientsCache[r.codeSage] ?? [];
+              final isLoading = _loadingCache[r.codeSage] ?? false;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: ExpansionTile(
+                  leading: const Icon(Icons.person, color: Colors.blue),
+                  title: Text(
+                    r.fullName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                );
-              },
-            ),
+                  subtitle: Text("Code Sage: ${r.codeSage}"),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.orange),
+                        onPressed: () => _editRepresentant(r),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _deleteRepresentant(r),
+                      ),
+                    ],
+                  ),
+                  onExpansionChanged: (expanded) {
+                    if (expanded && !_clientsCache.containsKey(r.codeSage)) {
+                      _loadClientsForRep(r.codeSage);
+                    }
+                  },
+                  children: [
+                    if (isLoading)
+                      const Padding(
+                        padding: EdgeInsets.all(12.0),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (clients.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(12.0),
+                        child: Text("Aucun client trouvé."),
+                      )
+                    else
+                      ...clients.map(
+                        (c) => ListTile(
+                          leading: const Icon(Icons.business,
+                              color: Colors.grey),
+                          title: Text(c.bpcnam),
+                          subtitle: Text(
+                            "Code: ${c.bpcnum} "
+                            "${c.tel.isNotEmpty ? '• 📞 ${c.tel}' : ''} "
+                            "${c.gouvernerat.isNotEmpty ? '• ${c.gouvernerat}' : ''}",
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

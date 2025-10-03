@@ -8,6 +8,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'representant_home_page.dart';
+import '../widgets/custom_navbar.dart';
+import '../data/api_config.dart'; // ✅ utilise apiRoot
 
 class VisitScreen extends StatefulWidget {
   final String codeClient;
@@ -33,26 +35,35 @@ class _VisitScreenState extends State<VisitScreen> {
   static const _brandBlue = Color(0xFF0D47A1);
   static const _bg = Color(0xFFF6F7FB);
 
-  late TextEditingController _dateController;
   final TextEditingController _noteController = TextEditingController();
-  late String codeVisite;
+  String? _noteError; 
   int? userId;
+
+  // header infos
+  String? _fullName;
+  String? _codeSage;
+
+  // infos visite après POST
+  String? codeVisite;
+  String? dateVisite;
 
   @override
   void initState() {
     super.initState();
     _loadUserId();
-    _dateController =
-        TextEditingController(text: DateFormat('dd/MM/yyyy').format(DateTime.now()));
-    final code =
-        (widget.codeSage ?? 'XXX').padRight(3, 'X').substring(0, 3).toUpperCase();
-    final dateCode = DateFormat('ddMMyy').format(DateTime.now());
-    codeVisite = "$code$dateCode";
+    _loadHeaderFromPrefs();
+  }
+
+  Future<void> _loadHeaderFromPrefs() async {
+    final sp = await SharedPreferences.getInstance();
+    setState(() {
+      _fullName = widget.fullName ?? sp.getString('fullName');
+      _codeSage = widget.codeSage ?? sp.getString('codeSage');
+    });
   }
 
   @override
   void dispose() {
-    _dateController.dispose();
     _noteController.dispose();
     super.dispose();
   }
@@ -65,61 +76,78 @@ class _VisitScreenState extends State<VisitScreen> {
   Future<void> _loadUserId() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() => userId = prefs.getInt('userId'));
-  }
-
-  Future<void> _selectDate() async {
-    DateTime initial = DateTime.now();
-    try {
-      initial = DateFormat('dd/MM/yyyy').parse(_dateController.text);
-    } catch (_) {}
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      _dateController.text = DateFormat('dd/MM/yyyy').format(picked);
-      setState(() {});
-    }
+    debugPrint("👤 UserId chargé: $userId");
   }
 
   Future<void> _saveVisit() async {
+    debugPrint("🟢 Bouton Sauvegarder cliqué");
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Erreur : utilisateur non identifié.")),
+      );
+      return;
+    }
+
+    // ✅ Vérification obligatoire
+    if (_noteController.text.trim().isEmpty) {
+      setState(() {
+        _noteError = "Le compte rendu est obligatoire.";
+      });
+      return;
+    } else {
+      setState(() {
+        _noteError = null;
+      });
+    }
+
     final bodyMap = {
-      "codeVisite": codeVisite,
-      "dateVisite": _dateController.text.trim(),
       "codeClient": widget.codeClient,
       "raisonSociale": widget.raisonSociale,
       "compteRendu": _noteController.text.trim(),
       "userId": userId,
     };
 
+    debugPrint("➡️ Envoi visite: $bodyMap");
+
     if (await _isOnline()) {
-      // ONLINE: post + cache
-      final url = Uri.parse('http://192.168.0.103:5274/api/visite');
+      final url = Uri.parse('$apiRoot/visite'); 
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(bodyMap),
       );
 
+      debugPrint("⬅️ Réponse: ${response.statusCode} - ${response.body}");
+
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // Save a copy locally (history)
+        final json = jsonDecode(response.body);
+
+        setState(() {
+          codeVisite = json['codeVisite'];
+          dateVisite = json['dateVisite'] != null
+              ? DateFormat('dd/MM/yyyy HH:mm')
+                  .format(DateTime.parse(json['dateVisite']))
+              : null;
+        });
+
+        // ✅ cache visite
         final cache = await Hive.openBox('visits_cache');
         final list = (cache.get('saved') as List?) ?? [];
         list.add(bodyMap);
         await cache.put('saved', list);
 
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("Visite enregistrée.")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("✅ Visite enregistrée (${json['codeVisite']}).")),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Erreur (${response.statusCode}).")),
+          SnackBar(content: Text("❌ Erreur serveur : ${response.statusCode}")),
         );
       }
     } else {
-      // OFFLINE: queue to send later
+      // hors ligne → mettre en attente
       final pending = await Hive.openBox('visits_pending');
       final list = (pending.get('queue') as List?) ?? [];
       list.add(bodyMap);
@@ -127,7 +155,7 @@ class _VisitScreenState extends State<VisitScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Hors ligne : visite mise en attente.")),
+        const SnackBar(content: Text("📴 Hors ligne : visite mise en attente.")),
       );
     }
   }
@@ -144,62 +172,42 @@ class _VisitScreenState extends State<VisitScreen> {
     }
   }
 
+  Widget _secondToolbar() {
+    return Material(
+      color: _brandBlue,
+      elevation: 0,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 42,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            children: [
+              _Tab('CHOIX CLIENT', () => _onTopNavTap('CHOIX CLIENT')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-
-      // Header like Client Detail, no back arrow
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        titleSpacing: 0,
-        title: Row(
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight + 42),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(width: 12),
-            Image.asset('assets/logo.png', height: 34),
-            const Spacer(),
-            if ((widget.fullName ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Text(
-                  widget.fullName!,
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                'CODE: ${widget.codeSage ?? ''}',
-                style: const TextStyle(color: Colors.black54, fontSize: 12),
-              ),
-            ),
-            const SizedBox(width: 6),
+            TrikiAppBar(fullName: _fullName, codeSage: _codeSage),
+            _secondToolbar(),
           ],
         ),
       ),
-
       body: Column(
         children: [
-          // Blue strip
-          Container(
-            color: _brandBlue,
-            height: 42,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              children: [
-                _Tab('CHOIX CLIENT', () => _onTopNavTap('CHOIX CLIENT')),
-              ],
-            ),
-          ),
-
-          // Content (form only)
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(12),
@@ -214,7 +222,7 @@ class _VisitScreenState extends State<VisitScreen> {
   }
 
   Widget _visitForm() {
-    InputDecoration _dec(String label, {Widget? suffix, int lines = 1}) {
+    InputDecoration _dec(String label, {int lines = 1, String? errorText}) {
       return InputDecoration(
         labelText: label,
         isDense: true,
@@ -223,7 +231,7 @@ class _VisitScreenState extends State<VisitScreen> {
         contentPadding:
             EdgeInsets.symmetric(horizontal: 12, vertical: lines > 1 ? 12 : 10),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        suffixIcon: suffix,
+        errorText: errorText,
       );
     }
 
@@ -236,37 +244,32 @@ class _VisitScreenState extends State<VisitScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Code visite : $codeVisite",
-              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
-            ),
+            if (codeVisite != null)
+              Text("Code visite : $codeVisite",
+                  style: const TextStyle(
+                      fontSize: 14.5, fontWeight: FontWeight.w800)),
+            if (dateVisite != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text("Date : $dateVisite",
+                    style: const TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+              ),
             const SizedBox(height: 10),
-            TextField(
-              controller: _dateController,
-              readOnly: true,
-              onTap: _selectDate,
-              decoration: _dec('Date visite', suffix: const Icon(Icons.event)),
-              style: const TextStyle(fontSize: 13.5),
-            ),
+
+            // ✅ Infos client (affichage en lecture seule)
+            Text("Code client : ${widget.codeClient}",
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
-            TextField(
-              controller: TextEditingController(text: widget.codeClient),
-              readOnly: true,
-              decoration: _dec('Code client'),
-              style: const TextStyle(fontSize: 13.5),
-            ),
+            Text("Raison sociale : ${widget.raisonSociale}",
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
-            TextField(
-              controller: TextEditingController(text: widget.raisonSociale),
-              readOnly: true,
-              decoration: _dec('Raison sociale'),
-              style: const TextStyle(fontSize: 13.5),
-            ),
-            const SizedBox(height: 10),
+
+            // ✅ Compte rendu
             TextField(
               controller: _noteController,
               maxLines: 3,
-              decoration: _dec('Compte rendu', lines: 3),
+              decoration: _dec('Compte rendu', lines: 3, errorText: _noteError),
               style: const TextStyle(fontSize: 13.5),
             ),
             const SizedBox(height: 12),
@@ -279,8 +282,10 @@ class _VisitScreenState extends State<VisitScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _brandBlue,
                   foregroundColor: Colors.white,
-                  textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  textStyle: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w700),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ),
@@ -290,8 +295,6 @@ class _VisitScreenState extends State<VisitScreen> {
     );
   }
 }
-
-/* small helpers */
 
 class _Tab extends StatelessWidget {
   final String label;
@@ -307,7 +310,8 @@ class _Tab extends StatelessWidget {
         style: TextButton.styleFrom(
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          textStyle:
+              const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
         child: Text(label),
       ),
