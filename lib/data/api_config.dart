@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 String get apiBaseUrl {
   if (kIsWeb) return 'https://localhost:7040';
   // On Android, localhost = the emulator; 10.0.2.2 maps to host PC.
-  if (!kIsWeb && Platform.isAndroid) return 'https://6f7f50205560.ngrok-free.app';
+  if (!kIsWeb && Platform.isAndroid) return 'https://545b44f7211e.ngrok-free.app';
   // iOS simulator & desktop
   return 'https://localhost:7040';
 }
